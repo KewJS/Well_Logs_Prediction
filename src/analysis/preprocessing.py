@@ -15,7 +15,6 @@ import seaborn as sns
 import mpld3
 from mpld3 import plugins
 import fnmatch
-import calender
 from IPython.display import display, Markdown, clear_output, HTML
 import joypy
 import rfpimp
@@ -34,7 +33,7 @@ class Logger(object):
     critical = print
 
 
-class Analysis(Feature_Engineer):
+class Analysis(Config):
     data = {}
 
     def __init__(self, field=["*"], suffix="", logger=Logger()):
@@ -45,25 +44,24 @@ class Analysis(Feature_Engineer):
 
     @staticmethod
     def vars(types=None, wc_vars=[], qpredictive=False):
-        """ Return list of variable names """
-        if types == None:
+        """ return list of variable names"""
+        if types==None:
             types = [V for V in Config.VARS]
         selected_vars = []
         for t in types:
             for d in Config.VARS[t]:
-                if qpredictive and d.get("predictive", False):
+                if qpredictive and d.get('predictive', False):
                     pass
-                elif len(wc_vars) != 0:
-                    selected_vars.extend(fnmatch.filter(wc_vars, d["var"]))
+                elif len(wc_vars) != 0: 
+                    selected_vars.extend(fnmatch.filter(wc_vars, d['var']))
                 else:
-                    selected_vars.append(d["var"])
-
-            return list(set(selected_vars))
+                    selected_vars.append(d['var'])
+        return list(set(selected_vars))
 
     
-    def read_file(self, fname, ext=self.ANALYSIS_CONFIG["FILE_EXT"], date=""):
+    def read_file(self, fname, ext=Config.ANALYSIS_CONFIG["FILE_EXT"], date=""):
         try:
-            fname = "{}.{}".format(os.path.join(Config.FILES["DATA_LOCAL"], fname, ext))
+            fname = "{}.{}".format(os.path.join(self.FILES["DATA_LOCAL"], fname, ext))
             if ext == "csv":
                 data = pd.read_csv(fname, thousands=",")
             elif ext == "las":
@@ -88,106 +86,254 @@ class Analysis(Feature_Engineer):
 
         return data
 
- 
-    # def read_las(self, in_dir, out_dir):
-    #     well_ext = self.ANALYSIS_CONFIG["LAS_FILE_EXT"]
-    #     norm_ext = self.ANALYSIS_CONFIG["NORM_FILE_EXT"]
-
-    #     total_rows = 0
-
-    #     logs_df = pd.DataFrame()
-    #     for root, dirs, files in os.walk(in_dir):
-    #         for filename in files:
-    #             if filename.endswith(tuple(norm_ext)):
-    #                 continue
-    #             elif filename.endswith(tuple(well_ext)):
-    #                 las_file = lasio.read(os.path.join(root, filename))
-    #                 df_temp = las_file.df()
-    #                 try:
-    #                     df_temp["WELL"] = las_file.well.WELL.value
-    #                 except:
-    #                     df_temp["WELL"] = np.nan
-
-    #                 total_rows += len(df_temp)
-    #                 logs_df = pd.concat([logs_df, df_temp], axis=0, sort=True)
-
-    #     if logs_df.size == 0:
-    #         self.logger.critical("no data found in file '{}'",format(logs_df))
-    #         if self.logger == print:
-    #             exit()
-
-    #     fname = os.path.join(self.FILES["DATA_LOCAL"], "{}{}.csv".format(self.FILES["WELL_LOGS_INPUT_FILE"], self.suffix))
-    #     self.logger.info("  Saving well logs data to file '{}' ...".format(fname))
-    #     logs_df.to_csv(fname)
-        
-    #     return logs_df
-
 
     def get_data(self):
-        self.logger.info(" Reading ...")
-        self.logger.info("   Las files ...")
+        self.logger.info(" Reading well logs files...")
 
         las_files = []
-        for las in self.ANALYSIS_CONFIG["LAS_FILE_EXT"]:
-            las_files.extend(glob.glob(files))
+        las_files.extend(glob.glob(os.path.join(self.FILES["DATA_LOCAL"], "*{}".format(self.ANALYSIS_CONFIG["FILE_EXT"]))))
 
+        self.data["{}".format(self.FILES["WELL_LOGS_MERGE"])] = pd.DataFrame()
         for files in las_files:
-            self.logger.info("    reading las file - {}".format(os.path.splitext(os.path.basename(files)))
+            self.logger.info("  Reading {}".format(os.path.splitext(os.path.basename(files))[0]))
             well_name = os.path.splitext(os.path.basename(files))[0]
-            data
+            well_las = lasio.read("{}".format(files))
+            self.data["{}".format(well_name)] = well_las.df()
+            self.data["{}".format(well_name)]["WELL"] = well_las.well.WELL.value
+            self.data["{}".format(well_name)]["XWELL"] = well_las.well.XWELL.value
+            self.data["{}".format(well_name)]["YWELL"] = well_las.well.YWELL.value
+
+            if self.data["{}".format(well_name)].size == 0:
+                self.logger.critical("no data found in the LAS file: {}".format(well_name))
+
+            self.data["{}".format(self.FILES["WELL_LOGS_MERGE"])] = pd.concat([self.data["{}".format(self.FILES["WELL_LOGS_MERGE"])], self.data["{}".format(well_name)]], axis=0, sort=True)
+
+        self.data["{}".format(self.FILES["WELL_LOGS_MERGE"])] = self.data["{}".format(self.FILES["WELL_LOGS_MERGE"])][['WELL', 'XWELL', 'YWELL'] + analysis.vars(['Logs'])]
+
+        fname = os.path.join(self.FILES["OUTPUT_PATH"], "{}{}.csv".format(self.FILES["WELL_LOGS_MERGE"], self.suffix))
+        self.logger.info("  Saving merge well logs data in CSV format into local machine - '{}'...".format(fname))
+        self.data["{}".format(self.FILES["WELL_LOGS_MERGE"])].to_csv(fname)
+
+        self.logger.info("  done ...")
 
 
-    def logs_data_quantity_plot(self, df, plot_title, xaxis, yaxis, source='pgps'):
-        """Horizontal stack plot
+    # # Data Processing
+    def get_numeric(self, df, depth_curve_name, x_coord, y_coord):
+        curve_list = list(df.columns[df.dtypes.values==np.dtype('float64')])
+        curve_list = [log for log in curve_list if log not in [depth_curve_name, x_coord, y_coord]]
+        return curve_list 
 
-        Visualize the amount of datapoints of each logs data in different wells
+    def mask_outside_thres(self, df, vtype):
+        """Masking of values below and above threshold
+
+        Setting the minimum and maximum values of features to follow argument set in config file
 
         Parameters
         ----------
         df : str
-            Las file dataframe; lasFile_impt_df
-        plot_title : str
-            Title of visualization plot
-        xaxis : str
-            Label of x-axis
-        yaxis : str
-            Label of y-axis
-        source : str, optional
-            Select the well logs to be display, choose between "PGPS" or "raw"
-            "PGPS" - 'WELL','DTC', 'DTCOM', 'DTSH', 'GR', 'NPHI','RHOB'
-            "raw" - 'WELL','CALI', 'DENS', 'GR', 'DT', 'DTC', 'DTS', 'PERMH', 'PHIE', 'PHIT', 'SWT', 'SWE', 'VSAND', 'VCLW'
+            Any dataframe
+        vtype : str
+            Variables dictionary from config file
         
         Returns
         -------
-        fig : object
-            Chart
+        df : object
+            Dataframe with value on columns being masked
         """
-        fig, ax = plt.subplots(figsize=(20,15))
-        if source=='PGPS':
-            impt_logs = ['WELL','DTC', 'DTCOM', 'DTSH', 'GR', 'NPHI','RHOB']
-            sub_df = df[impt_logs]
-            sub_groupby_df = sub_df.groupby('WELL').count()
-
-            ax = sub_groupby_df.plot.barh(stacked = True, ax=ax)
-            ax.set_title(plot_title, fontsize=18, weight='bold')
-            ax.set_xlabel(xaxis, fontsize=16)
-            ax.set_ylabel(yaxis, fontsize=16)
-            plt.xticks(fontsize=13)
-            plt.yticks(fontsize=13)
-            plt.legend(prop={'size':13}, title='Logs')
-        elif source=='raw':
-            impt_logs = ['WELL','CALI', 'DENS', 'GR', 'DT', 'DTC', 'DTS', 'PERMH', 'PHIE', 'PHIT', 'SWT', 'SWE', 'VSAND', 'VCLW']
-            sub_df = df[impt_logs]
-            sub_groupby_df = sub_df.groupby('WELL').count()
-
-            ax = sub_groupby_df.plot.barh(stacked = True, ax=ax)
-            ax.set_title(plot_title, fontsize=18, weight='bold')
-            ax.set_xlabel(xaxis, fontsize=16)
-            ax.set_ylabel(yaxis, fontsize=16)
-            plt.xticks(fontsize=13)
-            plt.yticks(fontsize=13)
-            plt.legend(prop={'size':13}, title='Logs')
+        for v in self.VARS[vtype]:
+            if v["min"] != None and v['var'] in df:
+               df.mask(df[v['var']] < v["min"], np.nan, inplace=True) 
+            if v["max"] != None and v['var'] in df:
+               df.mask(df[v['var']] > v["max"], np.nan, inplace=True)
         
+        return df
+
+
+    # # Exploratory Data Analysis
+    def rename_data_type(self, types):
+        """Convert the python data types to string
+
+        Data types in pandas dataframe is based on:
+        1. float64
+        2. int64
+        3. datetime64[ns]
+        4. object
+
+        Parameters
+        ----------
+        types : str
+            "Types" column in categorical dataframe 
+
+        Returns
+        -------
+        - If the data type is 'float64' or 'int64', return 'Number'  
+        - If the data type is 'datetime64[ns]', return 'Date'  
+        - If the data type is 'object', return 'String'  
+        - Else, return 'No Valid'
+        """
+        if ('float64' in types) or ('int64' in types):
+            return 'Number'
+        elif ('datetime64[ns]' in types):
+            return 'Date'
+        elif ('object' in types):
+            return 'String'
+        else:
+            return 'No Valid'
+
+
+    def descriptive_data(self, df):
+        """Acquire the description on dataframe
+
+        Acquire the summary on the dataframe,
+        and to be displayed in "Data Summary".
+
+        Parameters
+        ----------
+        df : str
+            Any dataframe
+
+        Returns
+        -------
+        descriptive_df : object
+            Dataframe on information the input dataframe
+        """
+        descriptive_info = {'Well Name: ': df['WELL'].unique().tolist(),
+                            'No. of Variables':int(len(df.columns)), 
+                            'No. of Observations':int(df.shape[0]),
+                            }
+
+        descriptive_df = pd.DataFrame(descriptive_info.items(), columns=['Descriptions', 'Values']).set_index('Descriptions')
+        descriptive_df.columns.names = ['Data Statistics']
+        return descriptive_df
+
+    
+    def data_type_analysis(self, df):
+        """Acquire the data types in a dataframe
+
+        Acquire the data types presence in a dataframe,
+        and to be displayed in "Data Summary".
+
+        Parameters
+        ----------
+        df : str
+            Any dataframe
+        """
+        categorical_df = pd.DataFrame(df.reset_index(inplace=False).dtypes.value_counts())
+        categorical_df.reset_index(inplace=True)
+        categorical_df = categorical_df.rename(columns={'index':'Types', 0:'Values'})
+        categorical_df['Types'] = categorical_df['Types'].astype(str)
+        categorical_df['Types'] = categorical_df['Types'].apply(lambda x: self.rename_data_type(x))
+        categorical_df = categorical_df.set_index('Types')
+        categorical_df.columns.names = ['Variables']
+        return categorical_df
+
+
+    def grid_df_display(self, list_dfs, rows=1, cols=2, fill='cols'):
+        """Display multiple tables side by side in jupyter notebook
+
+        Descriptive table and Data Type table will be shown
+        side by side in "Data Summary" in analysis.
+
+        Parameters
+        ----------
+        list_dfs : array-like
+            Multiple dataframes, you can put in a list on how many dataframe you want to see side by side
+        rows : int
+            Number of rows the tables to be displayed (default=1).
+        cols : int 
+            Number of columns the tables to be displayed (default=2).
+        fills : str
+            - If "cols", grid to display will be focused on columns.
+            - If "rows", grid to display will be focused on rows. (default="cols")
+
+        Returns
+        -------
+        dfs : object
+            Dataframes displayed side by side on dataframe summary 
+        """
+        html_table = "<table style = 'width: 100%; border: 0px'> {content} </table>"
+        html_row = "<tr style = 'border:0px'> {content} </tr>"
+        html_cell = "<td style='width: {width}%; vertical-align: top; border: 0px'> {{content}} </td>"
+        html_cell = html_cell.format(width=5000)
+
+        cells = [ html_cell.format(content=df.to_html()) for df in list_dfs[:rows*cols] ]
+        cells += cols * [html_cell.format(content="")]
+
+        if fill == 'rows':
+            grid = [ html_row.format(content="".join(cells[i:i+cols])) for i in range(0,rows*cols,cols)]
+
+        if fill == 'cols': 
+            grid = [ html_row.format(content="".join(cells[i:rows*cols:rows])) for i in range(0,rows)]
+            
+        dfs = display(HTML(html_table.format(content="".join(grid))))
+        return dfs
+
+    
+    def distribution_plot_summary(self, df, col1, col2):
+        """Variables summary with time-series and histogram
+   
+
+        Parameters
+        ----------
+        df : str
+            Any dataframe
+        col : str
+            Columns in input dataframe
+
+        Returns
+        -------
+        fig : object
+            Variables summary plot on missing values, time-series and histogram
+        """
+        plt.style.use('seaborn-notebook')
+        
+        fig = plt.figure(figsize=(20, 6))
+        spec = GridSpec(nrows=2, ncols=2)
+
+        ax0 = fig.add_subplot(spec[0, :])
+        ax0 = plt.plot(df.index, df[col1], '.')
+        ax0 = plt.xlabel('DATE', fontsize=14)
+        ax0 = plt.ylabel(col1, fontsize=14)
+        ax0 = plt.grid(True)
+
+        try:
+            ax1 = fig.add_subplot(spec[1, 0])
+            ax1 = sns.distplot(df[col1], hist=True, kde=True, 
+                            bins=int(20), color = 'darkblue')
+            ax1.set_xlabel(col1, fontsize=14)
+            ax1.set_ylabel('Density', fontsize=14)
+            ax1.grid(True)
+        except:
+            pass
+
+        ax2 = fig.add_subplot(spec[1, 1])
+
+        ax2 = plt.scatter(df[col1], df[col2],s=10)
+        ax2 = plt.xlabel(col1, fontsize=11)
+        ax2 = plt.ylabel(col2, fontsize=11)
+        ax2 = plt.grid(True)
+        
+        plt.show()
+        
+        return fig
+
+    
+    def curve_plot(self, logs, df, depth_name, height=Config.ANALYSIS_CONFIG["HLV_HEIGHT"], width=Config.ANALYSIS_CONFIG["HLV_WIDTH"]):
+        if logs == "GR_PEP":
+            fig = df.hvplot(x=depth_name, y=logs, invert=True, flip_yaxis=True, shared_axes=True,
+                            height=height, width=width).opts(fontsize={'labels': 10,'xticks': 9, 'yticks': 9}).opts(color='green')
+        elif logs == "CALI_PEP":
+            fig = df.hvplot(x=depth_name, y=logs, invert=True, flip_yaxis=True, shared_axes=True,
+                            height=height, width=width).opts(fontsize={'labels': 10,'xticks': 9, 'yticks': 9}).opts(color='darkblue', line_dash='dashed')
+        elif logs == "RT_PEP":
+            fig = df.hvplot(x=depth_name, y=logs, invert=True, flip_yaxis=True, shared_axes=True,
+                            height=height, width=width).opts(fontsize={'labels': 10,'xticks': 9, 'yticks': 9}).opts(color='darkgreen', line_dash='dotted')
+        elif logs == "RHOB_PEP":
+            fig = df.hvplot(x=depth_name, y=logs, invert=True, flip_yaxis=True, shared_axes=True,
+                            height=height, width=width).opts(fontsize={'labels': 10,'xticks': 9, 'yticks': 9}).opts(color='red', line_dash='dashed')
+        else:
+            fig = df.hvplot(x=depth_name, y=logs, invert=True, flip_yaxis=True, shared_axes=True,
+                            height=height, width=width).opts(fontsize={'labels': 10,'xticks': 9, 'yticks': 9})
         return fig
 
 
@@ -356,29 +502,3 @@ class Analysis(Feature_Engineer):
             pass
 
         return fig
-
-
-    def mask_outside_thres(self, df, vtype):
-        """Masking of values below and above threshold
-
-        Setting the minimum and maximum values of features to follow argument set in config file
-
-        Parameters
-        ----------
-        df : str
-            Any dataframe
-        vtype : str
-            Variables dictionary from config file
-        
-        Returns
-        -------
-        df : object
-            Dataframe with value on columns being masked
-        """
-        for v in self.VARS[vtype]:
-            if v["min"] != None and v['var'] in df:
-               df.mask(df[v['var']] < v["min"], np.nan, inplace=True) 
-            if v["max"] != None and v['var'] in df:
-               df.mask(df[v['var']] > v["max"], np.nan, inplace=True)
-        
-        return df

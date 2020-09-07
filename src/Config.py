@@ -15,39 +15,19 @@ class Logger(object):
 
 class Config(object):
 
-    _DATABASE = dict(
-        PetronasIO_PRD = dict(
-            SERVER  = "10.14.162.82",
-            PORT    = 1433,
-            UID     = "gd_user",
-            PWD     = "ZAQ!2wsx",
-            COLUMNS = dict(
-                VI_COMPLETION_ALL_en_US = "ITEM_ID ITEM_NAME ACTIVE TYPE PRODUCT STATUS OPERATED LIFT_TYPE DATA_STATUS FIELD LATITUDE BOT_X BOT_Y",
-                VI_PI_INPUT_H_en_US     = "ITEM_NAME START_DATETIME THP CHP GLIR FLT LIQ_RATE WATER_RATE GAS_RATE THT FLP CHOKE_1 CHT BHT BHP PDGT PDGP",  
-            )
-        ),
-        DART = dict(
-            START_DATE      = "2009-01-01",
-            END_DATE        = "2020-06-19",
-            AUTHORIZATION   = "",
-            DATA_TYPES      = ["PWSI", "PWT", "PWP", "WPI", "WSA"],
-            FIELDS          = ["SUMANDAK"],
-        )
-    )
+    QDEBUG = True
 
     NAME = dict(
         FULL  = "Well Logs Prediction",
         SHORT = "LP",
     )
 
-    QDEBUG = True
-
     FILES = dict(
-        DATA_LOCAL              = "data_local",
-        DATA                    = currentdir + os.sep + "data",
-        MODELS                  = "models",
-        WELL_LOGS_INPUT_FILE    = "well_logs_data",
-        MERGED_DATA             = "merged_data",
+        DATA_LOCAL          = "data_local",
+        DATA                = currentdir + os.sep + "data",
+        MODELS              = "models",
+        OUTPUT_PATH         = r"D:\02-Project\Geoscience\Logs_Prediction\data_local\processed_data",
+        WELL_LOGS_MERGE     = "well_logs_df",
     )
 
     # Fields
@@ -60,14 +40,18 @@ class Config(object):
     )
 
     ANALYSIS_CONFIG = dict(
-        LAS_FILE_EXT    = [".las", ".LAS", ""],
+        FILE_EXT        = "las",
         NORM_FILE_EXT   = [".csv", ".pickle", ".dlis", ".xlsx"],
+        ANALYSIS_COLS   = ['GR_PEP', 'CALI_PEP', 'RT_PEP', 'RHOB_PEP', 'NPHI_PEP', 'DTS_PEP', 'VS_DTS_PEP', 'DT_PEP', 'VP_DT_PEP', 'VELOCITY_RATIO_PEP', 'AI_PEP', 
+                        'PHIE_PEP', 'SWE_PEP', 'VSAND_PEP', 'VSHALE_PEP', 'VCALC_PEP', 'VCLB_PEP', 'VCLD_PEP', 'VCLW_PEP', 'VSILT_PEP', 'VDOLO_PEP',
+                        'VWATER_PEP', 'VOIL_PEP', 'VGAS_PEP', 'WELL', 'XWELL', 'YWELL'],
+        HLV_HEIGHT      = 400,
+        HLV_WIDTH       = 200,
         TEST_ALPHA      = 0.05,
         SAMPLE_SIZE     = 30,
         RHOB_SOURCE     = "rhob",
         VP_SOURCE       = "vp",
         VS_SOURCE       = "vs",
-        COLUMNS_ROLLING = ["RHOB", "Vp", "Vs"],
         ROLLING_SIZE    = 3,
         INTERPOLATE_DIR = "both",
     )
@@ -114,12 +98,30 @@ class Config(object):
 
     VARS = OrderedDict(
         Logs = [
-            dict(var="RHOB",    unit="g/cc",    min=0,      max=2.65,   impute="",      modelled=True),
-            dict(var="VP",      unit="g/cc",    min=0,      max=2.65,   impute="",      predictive=True),
-            dict(var="VS",      unit="g/cc",    min=0,      max=2.65,   impute="",      predictive=True),
-            dict(var="GR",      unit="g/cc",    min=0,      max=2.65,   impute="",      predictive=True),
-            dict(var="CALIPER", unit="g/cc",    min=0,      max=2.65,   impute="",      predictive=True),
-            dict(var="PHIE",    unit="g/cc",    min=0,      max=2.65,   impute="",      predictive=True),
-            dict(var="PHIT",    unit="g/cc",    min=0,      max=2.65,   impute="",      predictive=True),
-        ]
+            dict(var="GR_PEP",              unit="api",         min=35,     max=140,    impute="",      predictive=True ),
+            dict(var="CALI_PEP",            unit="m",           min=0,      max=10,     impute="",      predictive=True ),
+            dict(var="RT_PEP",              unit="Ohmm",        min=0,      max=33,     impute="",      predictive=True ),
+            dict(var="RHOB_PEP",            unit="g/cm3",       min=1.75,   max=2.95,   impute="",      predictive=True ),
+            dict(var="NPHI_PEP",            unit="%",           min=0,      max=0.60,   impute="",      predictive=True ),
+            dict(var="DTS_PEP",             unit="us/ft",       min=210,    max=660,    impute="",      predictive=True ),
+            dict(var="VS_DTS_PEP",          unit="m/s",         min=460,    max=1417,   impute="",      predictive=True ),
+            dict(var="DT_PEP",              unit="us/ft",       min=119,    max=178,    impute="",      predictive=True ),
+            dict(var="VP_DT_PEP",           unit="m/s",         min=1715,   max=2560,   impute="",      predictive=True ),
+            dict(var="VELOCITY_RATIO_PEP",  unit=None,          min=1.27,   max=3.73,   impute="",      predictive=True ),
+            dict(var="AI_PEP",              unit="g/cm3_m/s",   min=3524,   max=5563,   impute="",      predictive=True ),
+            dict(var="PHIE_PEP",            unit="%",           min=0,      max=1,      impute="",      predictive=True ),
+            dict(var="SWE_PEP",             unit="%",           min=0,      max=1,      impute="",      predictive=True ),
+            dict(var="VSAND_PEP",           unit="%",           min=0,      max=1,      impute="",      predictive=True ),
+            dict(var="VSHALE_PEP",          unit="%",           min=0,      max=1,      impute="",      predictive=True ),
+            dict(var="VCALC_PEP",           unit="%",           min=0,      max=1,      impute="",      predictive=True ),
+            dict(var="VCLB_PEP",            unit="%",           min=0,      max=1,      impute="",      predictive=True ),
+            dict(var="VCLD_PEP",            unit="%",           min=0,      max=1,      impute="",      predictive=True ),
+            dict(var="VCLW_PEP",            unit="%",           min=0,      max=1,      impute="",      predictive=True ),
+            dict(var="VSILT_PEP",           unit="%",           min=0,      max=1,      impute="",      predictive=True ),
+            dict(var="VDOLO_PEP",           unit="%",           min=0,      max=1,      impute="",      predictive=True ),
+            dict(var="VWATER_PEP",          unit="%",           min=0,      max=1,      impute="",      predictive=True ),
+            dict(var="VOIL_PEP",            unit="%",           min=0,      max=1,      impute="",      predictive=True ),
+            dict(var="VGAS_PEP",            unit="%",           min=0,      max=1,      impute="",      predictive=True ),
+            dict(var="VOIL_PEP",            unit="%",           min=0,      max=1,      impute="",      predictive=True ),
+        ]       
     )
